@@ -32,20 +32,34 @@ dataloader = torch.utils.data.DataLoader(dataset,
                                          batch_size= batchSize,
                                          shuffle=True)
 
+# DCGAN01
+# nz     = 100      # dimension of noise vector
+# nc     = 3        # number of channel - RGB
+# ngf    = 64       # generator 레이어들의 필터 개수를 조정하기 위한 값
+# ndf    = 64       # discriminator 레이어들의 필터 개수를 조정하기 위한 값
+# niter  = 200      # total number of epoch
+# lr     = 0.0002   # learning rate
+# beta1  = 0.5      # hyper parameter of Adam optimizer
+# ngpu   = 1        # number of using GPU
 
 nz     = 100      # dimension of noise vector
 nc     = 3        # number of channel - RGB
 ngf    = 64       # generator 레이어들의 필터 개수를 조정하기 위한 값
 ndf    = 64       # discriminator 레이어들의 필터 개수를 조정하기 위한 값
 niter  = 200      # total number of epoch
-lr     = 0.0002   # learning rate
+lrD     = 0.0002   # learning rate
+lrG     = 0.0001   # learning rate
 beta1  = 0.5      # hyper parameter of Adam optimizer
 ngpu   = 1        # number of using GPU
+
+
+
+
 
 imageSize = 64    
 batchSize = 64    
 
-outf = "./ouput/"
+outf = "./output_DCGAN02/"
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -166,8 +180,8 @@ noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 fixed_noise = Variable(fixed_noise)
 
 # setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
+optimizerD = optim.Adam(netD.parameters(), lr=lrD, betas=(beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=lrG, betas=(beta1, 0.999))
 
 result_dict = {}
 loss_D,loss_G,score_D,score_G1,score_G2 = [],[],[],[],[]
