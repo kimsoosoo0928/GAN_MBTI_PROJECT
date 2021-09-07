@@ -1,252 +1,246 @@
+from __future__ import print_function
+import argparse
+import os
+import random
+import torch
+import torch.nn as nn
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
+import torch.optim as optim
+import torch.utils.data
+import torchvision.datasets as dset
+import torchvision.transforms as transforms
+import torchvision.utils as vutils
+from torch.autograd import Variable
+import pickle
+import pandas
 import matplotlib.pyplot as plt
-import numpy as np
-
-from tensorflow.keras.datasets import mnist
-from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, Reshape
-from tensorflow.keras.layers import LeakyReLU
-from tensorflow.keras.layers import Conv2D, Conv2DTranspose
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam
 
-img_rows = 28
-img_cols = 28
-channels = 1
-
-# 입력 이미지 차원
-img_shape = (img_rows, img_cols, channels)
-
-# 생성자 입력으로 사용될 잡음 벡터의 크기
-z_dim = 100
-
-# 생성자
-def build_generator(z_dim):
-    
-    model = Sequential()
+des_dir = "./processing_data/"
+
+imageSize = 64    
+batchSize = 64 
+
+dataset = dset.ImageFolder(root=des_dir,
+                           transform=transforms.Compose([
+                               transforms.Scale(imageSize),
+                               transforms.ToTensor(),
+                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                           ]))
+
+dataloader = torch.utils.data.DataLoader(dataset,
+                                         batch_size= batchSize,
+                                         shuffle=True)
+
+
+nz     = 100      # dimension of noise vector
+nc     = 3        # number of channel - RGB
+ngf    = 64       # generator 레이어들의 필터 개수를 조정하기 위한 값
+ndf    = 64       # discriminator 레이어들의 필터 개수를 조정하기 위한 값
+niter  = 200      # total number of epoch
+lr     = 0.0002   # learning rate
+beta1  = 0.5      # hyper parameter of Adam optimizer
+ngpu   = 1        # number of using GPU
+
+imageSize = 64    
+batchSize = 64    
+
+outf = "./ouput/"
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:         # Conv weight init
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:  # BatchNorm weight init
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
+
+class _netG(nn.Module):
+    def __init__(self, ngpu):
+        super(_netG, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
+            nn.ReLU(True),
 
-    # 완전 연결층을 통해 입력을 7x7x256 크기 텐서로 변환
-    model.add(Dense(256 * 7 * 7, input_dim=z_dim))
-    model.add(Reshape((7, 7, 256)))
+            # state size. (ngf*8) x 4 x 4
+            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 4),
+            nn.ReLU(True),
 
-    # 7x7x256에서 14x14x128 텐서로 바꾸는 전치 합성곱 층
-    model.add(Conv2DTranspose(128, kernel_size=3, strides=2, padding='same'))
+            # state size. (ngf*4) x 8 x 8
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 2),
+            nn.ReLU(True),
 
-    # 배치 정규화
-    model.add(BatchNormalization())
+            # state size. (ngf*2) x 16 x 16
+            nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf),
+            nn.ReLU(True),
 
-    # LeakyReLU 활성화 함수
-    model.add(LeakyReLU(alpha=0.01))
+            # state size. (ngf) x 32 x 32
+            nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
+            nn.Tanh()
 
-    # 14x14x128에서 14x14x64 텐서로 바꾸는 전치 합성곱 층
-    model.add(Conv2DTranspose(64, kernel_size=3, strides=1, padding='same'))
+            # state size. (nc) x 64 x 64
+        )
 
-    # 배치 정규화
-    model.add(BatchNormalization())
+    def forward(self, input):
+        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
+            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+        else:
+            output = self.main(input)
+        return output
 
-    # LeakyReLU 활성화 함수
-    model.add(LeakyReLU(alpha=0.01))
 
-    # 14x14x64에서 28x28x1 텐서로 바꾸는 전치 합성곱 층
-    model.add(Conv2DTranspose(1, kernel_size=3, strides=2, padding='same'))
+class _netD(nn.Module):
+    def __init__(self, ngpu):
+        super(_netD, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
 
-    # tanh 활성화 함수를 사용한 출력층
-    model.add(Activation('tanh'))
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
 
-    return model
+            # state size. 1
+        )
 
-# 판별자
-def build_discriminator(img_shape):
-    
-    model = Sequential()
+    def forward(self, input):
+        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
+            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+        else:
+            output = self.main(input)
 
-    # 28x28x1에서 14x14x32 텐서로 바꾸는 합성곱 층
-    model.add(
-        Conv2D(32,
-               kernel_size=3,
-               strides=2,
-               input_shape=img_shape,
-               padding='same'))
+        return output.view(-1, 1).squeeze(1)
 
-    # LeakyReLU 활성화 함수
-    model.add(LeakyReLU(alpha=0.01))
-
-    # 14x14x32에서 7x7x64 텐서로 바꾸는 합성곱 층
-    model.add(
-        Conv2D(64,
-               kernel_size=3,
-               strides=2,
-               padding='same'))
-
-    # LeakyReLU 활성화 함수
-    model.add(LeakyReLU(alpha=0.01))
-
-    # 7x7x64에서 3x3x128 텐서로 바꾸는 합성곱 층
-    model.add(
-        Conv2D(128,
-               kernel_size=3,
-               strides=2,
-               padding='same'))
-
-    # LeakyReLU 활성화 함수
-    model.add(LeakyReLU(alpha=0.01))
-    
-    # sigmoid 활성화 함수를 사용한 출력층
-    model.add(Flatten())
-    model.add(Dense(1, activation='sigmoid'))
-
-    return model
-
-#모델 
-def build_gan(generator, discriminator):
-    
-    model = Sequential()
-
-    # 생성자 -> 판별자로 연결된 모델
-    model.add(generator)
-    model.add(discriminator)
-
-    return model
-
-# 판별자 모델을 만들고 컴파일하기
-discriminator = build_discriminator(img_shape)
-discriminator.compile(loss='binary_crossentropy',
-                      optimizer=Adam(),
-                      metrics=['accuracy'])
-
-# 생성자 모델 만들기
-generator = build_generator(z_dim)
-
-# 생성자를 훈련하는 동안 판별자의 파라미터를 유지
-discriminator.trainable = False
-
-# 생성자를 훈련하기 위해 동결된 판별자로 GAN 모델을 만들고 컴파일
-gan = build_gan(generator, discriminator)
-gan.compile(loss='binary_crossentropy', optimizer=Adam())
-
-
-losses = []
-accuracies = []
-iteration_checkpoints = []
-
-
-def train(iterations, batch_size, sample_interval):
-
-    # MNIST 데이터셋 로드
-    (X_train, _), (_, _) = mnist.load_data()
-
-    # [0, 255] 흑백 픽셀 값을 [-1, 1] 사이로 스케일 조정
-    X_train = X_train / 127.5 - 1.0
-    X_train = np.expand_dims(X_train, axis=3)
-
-    # 진짜 이미지 레이블: 모두 1
-    real = np.ones((batch_size, 1))
-
-    # 가짜 이미지 레이블: 모두 0
-    fake = np.zeros((batch_size, 1))
-
-    for iteration in range(iterations):
-
-        # -------------------------
-        #  판별자 훈련
-        # -------------------------
-
-        # 진짜 이미지에서 랜덤 배치 가져오기
-        idx = np.random.randint(0, X_train.shape[0], batch_size)
-        imgs = X_train[idx]
-
-        # 가짜 이미지 배치 생성
-        z = np.random.normal(0, 1, (batch_size, 100))
-        gen_imgs = generator.predict(z)
-
-        # 판별자 훈련
-        d_loss_real = discriminator.train_on_batch(imgs, real)
-        d_loss_fake = discriminator.train_on_batch(gen_imgs, fake)
-        d_loss, accuracy = 0.5 * np.add(d_loss_real, d_loss_fake)
-
-        # ---------------------
-        #  생성자 훈련
-        # ---------------------
-
-        # 가짜 이미지 배치 생성
-        z = np.random.normal(0, 1, (batch_size, 100))
-        gen_imgs = generator.predict(z)
-
-        # 생성자 훈련
-        g_loss = gan.train_on_batch(z, real)
-
-        if (iteration + 1) % sample_interval == 0:
-
-            # 훈련이 끝난 후 그래프를 그리기 위해 손실과 정확도 저장
-            losses.append((d_loss, g_loss))
-            accuracies.append(100.0 * accuracy)
-            iteration_checkpoints.append(iteration + 1)
-
-            # 훈련 과정 출력
-            print("%d [D 손실: %f, 정확도: %.2f%%] [G 손실: %f]" %
-                  (iteration + 1, d_loss, 100.0 * accuracy, g_loss))
-
-            # 생성된 이미지 샘플 출력
-            sample_images(generator)
-
-def sample_images(generator, image_grid_rows=4, image_grid_columns=4):
-    
-    # 랜덤한 잡음 샘플링
-    z = np.random.normal(0, 1, (image_grid_rows * image_grid_columns, z_dim))
-
-    # 랜덤한 잡음에서 이미지 생성하기
-    gen_imgs = generator.predict(z)
-
-    # 이미지 픽셀 값을 [0, 1] 사이로 스케일 조정
-    gen_imgs = 0.5 * gen_imgs + 0.5
-
-    # 이미지 그리드 설정
-    fig, axs = plt.subplots(image_grid_rows,
-                            image_grid_columns,
-                            figsize=(4, 4),
-                            sharey=True,
-                            sharex=True)
-
-    cnt = 0
-    for i in range(image_grid_rows):
-        for j in range(image_grid_columns):
-            # 이미지 그리드 출력
-            axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
-            axs[i, j].axis('off')
-            cnt += 1
-    plt.show()
-
-# 하이퍼파라미터 설정
-iterations = 20000
-batch_size = 128
-sample_interval = 1000
-
-# 지정된 반복 횟수만큼 DCGAN 훈련
-train(iterations, batch_size, sample_interval)
-
-
-losses = np.array(losses)
-
-# 판별자와 생성자의 훈련 손실 그래프
-plt.figure(figsize=(15, 5))
-plt.plot(iteration_checkpoints, losses.T[0], label="Discriminator loss")
-plt.plot(iteration_checkpoints, losses.T[1], label="Generator loss")
-
-plt.xticks(iteration_checkpoints, rotation=90)
-
-plt.title("Training Loss")
-plt.xlabel("Iteration")
-plt.ylabel("Loss")
-plt.legend()
-
-accuracies = np.array(accuracies)
-
-# 판별자의 정확도 그래프
-plt.figure(figsize=(15, 5))
-plt.plot(iteration_checkpoints, accuracies, label="Discriminator accuracy")
-
-plt.xticks(iteration_checkpoints, rotation=90)
-plt.yticks(range(0, 100, 5))
-
-plt.title("Discriminator Accuracy")
-plt.xlabel("Iteration")
-plt.ylabel("Accuracy (%)")
-plt.legend()
+
+netG = _netG(ngpu)
+netG.apply(weights_init)
+print(netG)
+
+netD = _netD(ngpu)
+netD.apply(weights_init)
+print(netD)
+
+
+criterion = nn.BCELoss()
+
+input = torch.FloatTensor(batchSize, 3, imageSize,imageSize)
+noise = torch.FloatTensor(batchSize, nz, 1, 1)
+fixed_noise = torch.FloatTensor(batchSize, nz, 1, 1).normal_(0, 1)
+
+label = torch.FloatTensor(batchSize)
+real_label = 1
+fake_label = 0
+
+netD.cuda()
+netG.cuda()
+criterion.cuda()
+input, label = input.cuda(), label.cuda()
+noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
+
+
+fixed_noise = Variable(fixed_noise)
+
+# setup optimizer
+optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
+
+result_dict = {}
+loss_D,loss_G,score_D,score_G1,score_G2 = [],[],[],[],[]
+
+
+for epoch in range(niter):
+    for i, data in enumerate(dataloader, 0):
+        ############################
+        # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+        ###########################
+
+        # train with real
+        netD.zero_grad()
+        real_cpu, _ = data
+        batch_size = real_cpu.size(0)
+
+        real_cpu = real_cpu.cuda()
+        input.resize_as_(real_cpu).copy_(real_cpu)
+        label.resize_(batch_size).fill_(real_label)
+
+        inputv = Variable(input)
+        labelv = Variable(label)
+
+        output = netD(inputv)
+        errD_real = criterion(output, labelv)
+        errD_real.backward()
+        D_x = output.data.mean()
+
+        # train with fake
+        noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        noisev = Variable(noise)
+        fake = netG(noisev)
+        labelv = Variable(label.fill_(fake_label))
+        output = netD(fake.detach())
+        errD_fake = criterion(output, labelv)
+        errD_fake.backward()
+        D_G_z1 = output.data.mean()
+
+        errD = errD_real + errD_fake
+        optimizerD.step()
+
+        ############################
+        # (2) Update G network: maximize log(D(G(z)))
+        ###########################
+        netG.zero_grad()
+        labelv = Variable(label.fill_(real_label))  # fake labels are real for generator cost
+        output = netD(fake)
+
+        errG = criterion(output, labelv)
+        errG.backward()
+        D_G_z2 = output.data.mean()
+        optimizerG.step()
+
+
+
+    vutils.save_image(real_cpu,
+            '%s/real_samples.png' % outf,
+            normalize=True)
+    fake = netG(fixed_noise)
+    vutils.save_image(fake.data,
+            '%s/fake_samples_epoch_%03d.png' % (outf, epoch),
+            normalize=True)
+    print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
+      % (epoch, niter, i, len(dataloader),
+         errD.data, errG.data, D_x, D_G_z1, D_G_z2))
+    loss_D.append(errD.data)
+    loss_G.append(errG.data)
+    score_D.append(D_x)
+    score_G1.append(D_G_z1)
+    score_G2.append(D_G_z2)
+    result_dict = {"loss_D":loss_D,"loss_G":loss_G,"score_D":score_D,"score_G1":score_G1,"score_G2":score_G2}
+    pickle.dump(result_dict,open("./{}/result_dict.p".format(outf),"wb"))
+
+    # do checkpointing
+    torch.save(netG.state_dict(), '%s/netG.pth' % (outf))
+    torch.save(netD.state_dict(), '%s/netD.pth' % (outf))

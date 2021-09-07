@@ -1,8 +1,8 @@
 from PIL import Image
 import os.path
 
-targerdir = r"D:\01_TEAM_PROJECT\_data\ISTP\W" #해당 폴더 설정 
-newpath = r"D:\01_TEAM_PROJECT\_data\ISTP\_W"
+targerdir = r"D:\01_TEAM_PROJECT\_data\INTP\W" #해당 폴더 설정 
+newpath = r"D:\01_TEAM_PROJECT\_data\INTP\_W"
 
 files = os.listdir(targerdir)
 
