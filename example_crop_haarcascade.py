@@ -3,8 +3,8 @@ import numpy
 import os
 
 # 한글경로 쓰기
-def imwrite(image, savePath, parameters = None):
-    
+def imwrite(image, savePath, parameters = None): 
+        
     try: 
         
         result, array = cv2.imencode(os.path.splitext(savePath)[1], image, parameters) 
@@ -27,15 +27,18 @@ def imwrite(image, savePath, parameters = None):
         
         return False
 
+
+
 if __name__ == '__main__':
 
     baseDirectory = os.path.abspath(os.path.dirname(__file__))
 
     imageDirectory = f'{baseDirectory}/MBTI/ISTP/W'
 
-    haarcascade = cv2.CascadeClassifier(f'{baseDirectory}/haarcascades/haarcascade_frontalface_alt2.xml')
+    haarcascade = cv2.CascadeClassifier(f'{baseDirectory}/haarcascades/haarcascade_frontalface_alt2.xml') # 검출 대상 : 정면 얼굴 검출 
+    # OpenCV에서 제공하는 하르 기반 분류기 XML파일 
 
-    savePath = f'{baseDirectory}/Cropped_ISTP_W'
+    savePath = f'{baseDirectory}/Cropped_ISTP_W' 
     os.makedirs(savePath, exist_ok = True)
 
     filenameList = os.listdir(imageDirectory)
@@ -51,18 +54,18 @@ if __name__ == '__main__':
 
         # scaleFactor : 이미지 피라미드 스케일, minNeighbors : 인접 객체 최소 거리 픽셀, minSize : 탐지 객체 최소 크기
         boundingBoxes = haarcascade.detectMultiScale(image, scaleFactor =  1.3, minNeighbors = 3, minSize = (10,10))
-
+        # image : 검출하고자 하는 원본 이미지 // defalt = 1.1
+        # minNeighbors : 인접 객체 최소 거리 픽셀로 1~3정도로 설정을 하면 얼굴인식율 높았고 4이상으로 설정할 경우 인식율이 떨어지는것을 확인했다. defalut = 3
+        # minsize : 탐지 객체 최소 크기로, 10*10 이하의 객체는 인식을 하지 않는다. maxSize는 설정하지 않음으로써 사진에서 크게 나온 얼굴도 검출이 가능하다. 
         for boundingBox in boundingBoxes:
                 
             x, y, width, height = boundingBox
 
-            # cv2.rectangle(image, (x, y), (x + width, y + height), (0, 0, 255), thickness = 2) # 경계상자 그리기
+    
 
-            # cv2.imshow(f'Haarcascade', image)
-            # cv2.waitKey(0)
-
-            croppedImage = image[y : y + height, x : x + width,  : ]
-            #croppedImage = image[y : y + height + int(height/4), x -int(width/4) :x + width + int(width/4)]
+            croppedImage = image[y : y + height, x : x + width,  : ] 
+            # 얼굴 인식 후 크롭 사이즈 결정
+            
 
             #cv2.imshow(f'Cropped', croppedImage)
             cv2.waitKey(0)
