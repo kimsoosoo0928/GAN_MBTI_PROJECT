@@ -21,9 +21,9 @@ def imshow(img):
                            transforms.ToTensor(),
                            transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
                            ])
-trainset = torchvision.datasets.ImageFolder(root = "/home/pirl/Desktop/clothes",
+trainset = torchvision.datasets.ImageFolder(root = "split_processing_data",
                                            transform = trans)
 
 print(trainset.__getitem__(18))
 
-len(trainset)
+print(len(trainset))
