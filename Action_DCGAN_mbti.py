@@ -1,7 +1,6 @@
 
 
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-
+from keras.preprocessing.image import ImageDataGenerator
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -12,7 +11,18 @@ from tensorflow.keras.layers import Conv2D, Conv2DTranspose
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 
+data_genrator = ImageDataGenerator(rescale=1./255)
 
+train_generator = data_genrator.flow_from_directory(
+    './split_processing_data',
+    target_size=(100,100),
+    batch_size=1,
+    class_mode='categorical'
+)
+
+X_train = train_generator.next()
+plt.imshow(X_train[0])
+plt.show()
 
 img_rows = 28
 img_cols = 28
@@ -135,26 +145,11 @@ iteration_checkpoints = []
 
 def train(iterations, batch_size, sample_interval):
 
-    train_datagen = ImageDataGenerator(
-    rescale=1./255, 
-    horizontal_flip=True,
-    vertical_flip=True,
-    width_shift_range=0.1,
-    height_shift_range=0.1,
-    rotation_range=5,
-    zoom_range=1.2,
-    shear_range=0.7,
-    fill_mode='nearest')
 
-    
-    X_train = train_datagen.flow_from_directory(
-        './split_processing_data',
-        target_size=(150, 150),
-        batch_size=5, 
-        class_mode='binary',
-        shuffle=True)
+    # [0, 255] 흑백 픽셀 값을 [-1, 1] 사이로 스케일 조정
+    X_train = X_train / 127.5 - 1.0
+    X_train = np.expand_dims(X_train, axis=3)
 
-   
     # 진짜 이미지 레이블: 모두 1
     real = np.ones((batch_size, 1))
 
@@ -168,7 +163,7 @@ def train(iterations, batch_size, sample_interval):
         # -------------------------
 
         # 진짜 이미지에서 랜덤 배치 가져오기
-        idx = np.random.randint(0, X_train, batch_size)
+        idx = np.random.randint(0, X_train.shape[0], batch_size)
         imgs = X_train[idx]
 
         # 가짜 이미지 배치 생성

@@ -132,25 +132,15 @@ iteration_checkpoints = []
 def train(iterations, batch_size, sample_interval):
     
 
-    data_genrator = ImageDataGenerator(rescale=1./255)
-
-    train_generator = data_genrator.flow_from_directory(
-    './split_processing_data',
-    target_size=(128,128),
-    batch_size=1,
-    class_mode='categorical'
-    )
-
-    X_train, _ = train_generator.next()
-
-    print(X_train[0].shape)
-    plt.imshow(X_train[0])
-    plt.show()
+    train_datagen = ImageDataGenerator(rescale=1./255)
+    X_train = train_datagen.flow_from_directory("./processing_data",target_size=(150,150),batch_size=5
+     ,shuffle=False,class_mode='categorical'
+     )
 
 # Found 3173 images belonging to 32 classes.
 
     # [0, 255] 흑백 픽셀 값을 [-1, 1] 사이로 스케일 조정
-    X_train = X_train / 127.5 - 1.0
+    
     X_train = np.expand_dims(X_train, axis=3)
 
     # 진짜 이미지 레이블: 모두 1
