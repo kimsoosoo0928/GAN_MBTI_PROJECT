@@ -133,7 +133,7 @@ def train(iterations, batch_size, sample_interval):
     
 
     train_datagen = ImageDataGenerator(rescale=1./255)
-    X_train = train_datagen.flow_from_directory("./processing_data",target_size=(150,150),batch_size=5
+    X_train = train_datagen.flow_from_directory("./processing_data/ENFJ",target_size=(32,32),batch_size=5
      ,shuffle=False,class_mode='categorical'
      )
 
@@ -141,7 +141,6 @@ def train(iterations, batch_size, sample_interval):
 
     # [0, 255] 흑백 픽셀 값을 [-1, 1] 사이로 스케일 조정
     
-    X_train = np.expand_dims(X_train, axis=3)
 
     # 진짜 이미지 레이블: 모두 1
     real = np.ones((batch_size, 1))
@@ -221,9 +220,9 @@ def sample_images(generator, image_grid_rows=4, image_grid_columns=4):
     plt.show()
 
 # 하이퍼파라미터 설정
-iterations = 20000
-batch_size = 128
-sample_interval = 1000
+iterations = 200
+batch_size = 4
+sample_interval = 100
 
 # 지정된 반복 횟수만큼 DCGAN 훈련
 train(iterations, batch_size, sample_interval)
