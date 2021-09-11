@@ -1,8 +1,8 @@
 from PIL import Image # PIL 다양한 이미지 파일 형식을 지원하고 강력한 이미지 처리와 그래픽 기능을 제공하는 자유-오픈 소스 소프트웨어 라이브러리이다
 import os.path #  os.path 내에는 경로반환, 경로추출 등 파일/디렉토리 경로와 관련된 많은 함수를 제공해준다
 
-targerdir = r"D:\TEAM_PROJECT\data\ISFP\W" # original data folder  
-newpath = r"D:\TEAM_PROJECT\data\ISFP\_W" # resize data folder 
+targerdir = r"D:\TEAM_PROJECT\split_processing_data\ENFJ_M" # original data folder  
+newpath = r"D:\TEAM_PROJECT\data" # resize data folder 
 
 files = os.listdir(targerdir) # 지정한 디렉토리 내의 모든 파일과 디렉토리의 리스트를 반환 
 
@@ -14,7 +14,7 @@ for (path,dirs,files) in os.walk(targerdir): # os.walk()를 사용하면 어떤 
              print(image.filename)
              print(image.size)
 
-             image=image.resize((150, 150)) # 이미지를 150 * 150 으로 리사이즈
+             image=image.resize((128, 128)) # 이미지를 128 * 128 으로 리사이즈
              image.save(newpath+"\\"+file) # 앞서 지정한 새로운 경로로 파일을 저장 
              print(image.size)
 
